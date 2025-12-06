@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ABANA 3D Studio</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f9fb;
+      --panel: #ffffff;
+      --text: #1f2d3d;
+      --muted: #6b7280;
+      --accent: #2563eb;
+      --accent-2: #10b981;
+      --border: #e5e7eb;
+      --shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Inter", system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      min-height: 100vh;
+    }
+    #app { display: grid; grid-template-columns: minmax(260px, 32vw) 1fr; width: 100%; min-height: 100vh; }
+    @media (max-width: 900px) {
+      #app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+      aside { max-height: 50vh; }
+      #viewer { min-height: 50vh; }
+    }
+    aside {
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      padding: 16px 14px 24px;
+      overflow-y: auto;
+      box-shadow: var(--shadow);
+    }
+    h1 { margin: 0 0 12px; font-size: 22px; }
+    h2 { margin: 16px 0 8px; font-size: 16px; }
+    label { font-size: 13px; color: var(--muted); display: block; margin: 8px 0 4px; }
+    input[type="text"], input[type="date"], select, textarea, input[type="number"] {
+      width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
+      background: #fdfefe; font-size: 14px; color: var(--text);
+    }
+    textarea { min-height: 64px; resize: vertical; }
+    input[type="file"] { width: 100%; }
+    button {
+      background: linear-gradient(135deg, var(--accent), #3b82f6);
+      color: white; border: none; border-radius: 10px; padding: 10px 14px;
+      font-weight: 600; cursor: pointer; box-shadow: var(--shadow); transition: transform 120ms ease;
+    }
+    button.secondary { background: #e5e7eb; color: #111827; box-shadow: none; }
+    button.danger { background: #ef4444; }
+    button:hover { transform: translateY(-1px); }
+    .section { margin-bottom: 18px; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: #fff; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .inline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .list { margin: 8px 0 0; padding: 0; list-style: none; }
+    .list li { padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px; background: #f8fafc; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .list li span { font-size: 13px; }
+    #viewer { position: relative; background: #0f172a; min-height: 100vh; }
+    #three-canvas { width: 100%; height: 100%; display: block; }
+    #tools {
+      position: absolute; top: 10px; left: 10px; display: flex; flex-wrap: wrap;
+      gap: 6px; background: rgba(255,255,255,0.92); padding: 8px; border-radius: 12px;
+      box-shadow: var(--shadow); z-index: 10;
+    }
+    #tools button { padding: 8px 10px; box-shadow: none; background: #e5e7eb; color: #0f172a; }
+    #tools button.active { background: var(--accent); color: #fff; }
+    #tools .group { display: flex; gap: 6px; }
+    dialog { border: none; border-radius: 12px; padding: 18px; box-shadow: var(--shadow); }
+    dialog::backdrop { background: rgba(0,0,0,0.35); }
+    .small { font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+<body>
+<div id="app">
+  <aside>
+    <h1>ABANA 3D Studio</h1>
+    <div class="section" id="loading-section">
+      <h2>Caricamento</h2>
+      <label>OBJ</label>
+      <input type="file" id="obj-input" accept=".obj" />
+      <label>MTL (opzionale)</label>
+      <input type="file" id="mtl-input" accept=".mtl" />
+      <label>Texture (multiple, opzionali)</label>
+      <input type="file" id="tex-input" accept="image/*" multiple />
+      <label>GLB/GLTF</label>
+      <input type="file" id="glb-input" accept=".glb,.gltf" />
+      <label>Scala (unità scena mm)</label>
+      <input type="number" id="scale-input" value="1" step="0.01" />
+      <div class="inline" style="margin-top:10px;">
+        <button id="load-obj">CARICA OBJ</button>
+        <button id="load-glb">CARICA GLB</button>
+      </div>
+      <div class="small" style="margin-top:6px;">Mantiene scala 1:1; centratura XY e base a Z=0.</div>
+    </div>
+
+    <div class="section" id="metadata-section">
+      <h2>Metadati</h2>
+      <label>Titolo</label><input id="meta-title" type="text" />
+      <label>Autore/Ente</label><input id="meta-author" type="text" />
+      <label>Data ISO</label><input id="meta-date" type="date" />
+      <label>Licenza</label>
+      <select id="meta-license">
+        <option value="">--</option>
+        <option>CC BY</option><option>CC BY-SA</option><option>CC BY-NC</option><option>CC0</option><option>GPL</option><option>MIT</option>
+      </select>
+      <label>Descrizione</label><textarea id="meta-desc"></textarea>
+      <label>Luogo</label><input id="meta-place" type="text" />
+      <label>Coordinate</label><input id="meta-coord" type="text" />
+      <label>Keywords (comma)</label><input id="meta-keywords" type="text" />
+      <label>Fonte</label><input id="meta-source" type="text" />
+      <div class="inline" style="margin-top:10px;">
+        <button id="save-meta">Salva metadati</button>
+        <button class="secondary" id="export-meta">Export JSON</button>
+        <input type="file" id="import-meta" accept="application/json" style="flex:1;" />
+      </div>
+    </div>
+
+    <div class="section" id="paradata-section">
+      <h2>Paradata</h2>
+      <label>Metodo</label>
+      <select id="para-method">
+        <option value="">--</option>
+        <option>fotogrammetria</option><option>laser scanning</option><option>structured light</option><option>modeling manuale</option><option>altro</option>
+      </select>
+      <label>Strumenti/Software</label><input id="para-tools" type="text" />
+      <label>Parametri</label><textarea id="para-params"></textarea>
+      <label>Operatori</label><input id="para-operators" type="text" />
+      <label>Decisioni/Incertezze</label><textarea id="para-decisions"></textarea>
+      <div class="inline" style="margin-top:10px;">
+        <button id="save-para">Salva paradata</button>
+      </div>
+    </div>
+
+    <div class="section" id="measure-section">
+      <h2>Misure</h2>
+      <ul class="list" id="measure-list"></ul>
+      <button class="secondary" id="clear-measures">Pulisci misure</button>
+    </div>
+
+    <div class="section" id="notes-section">
+      <h2>Note</h2>
+      <ul class="list" id="notes-list"></ul>
+      <button class="secondary" id="clear-notes">Pulisci note</button>
+    </div>
+
+    <div class="section" id="share-section">
+      <h2>Share / Export</h2>
+      <div class="inline" style="margin-bottom:8px;">
+        <button id="share-link">Crea link</button>
+        <button id="export-glb">Esporta GLB (metadata embedded)</button>
+      </div>
+      <div class="inline">
+        <button id="export-zip">Export ZIP OBJ</button>
+        <span class="small">Include metadata.json</span>
+      </div>
+    </div>
+  </aside>
+  <section id="viewer">
+    <div id="tools">
+      <div class="group">
+        <button data-mode="orbit" class="active">Orbit</button>
+        <button data-mode="measure">Misura</button>
+        <button data-mode="note">Note</button>
+      </div>
+      <div class="group">
+        <button id="fit-view">Adatta vista</button>
+        <button id="reset-view">Reset vista</button>
+        <button id="toggle-wire">Wireframe</button>
+      </div>
+      <div class="group">
+        <button id="clear-measures-top">Pulisci misure</button>
+        <button id="clear-notes-top">Pulisci note</button>
+      </div>
+      <div class="group">
+        <button data-rot="x90">X +90°</button>
+        <button data-rot="x-90">X -90°</button>
+        <button data-rot="y90">Y +90°</button>
+        <button data-rot="y-90">Y -90°</button>
+        <button data-rot="z90">Z +90°</button>
+        <button data-rot="z-90">Z -90°</button>
+      </div>
+    </div>
+    <canvas id="three-canvas"></canvas>
+  </section>
+</div>
+
+<dialog id="note-modal">
+  <form method="dialog" id="note-form">
+    <h3>Nuova nota</h3>
+    <div class="small" id="note-pos"></div>
+    <label>Tipo</label>
+    <select id="note-type">
+      <option>osservazione</option><option>decisione</option><option>incertezza</option><option>problema</option>
+    </select>
+    <label>Testo</label><textarea id="note-text" required></textarea>
+    <label>Tag (comma)</label><input id="note-tags" type="text" />
+    <label><input type="checkbox" id="note-add-para" checked /> Aggiungi ai paradata</label>
+    <div class="inline" style="margin-top:10px;">
+      <button value="cancel" class="secondary">Annulla</button>
+      <button value="submit">Salva</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="info-modal">
+  <div id="info-content"></div>
+  <div style="text-align:right; margin-top:12px;"><button onclick="this.closest('dialog').close()">Chiudi</button></div>
+</dialog>
+
+<script type="module">
+import * as THREE from 'https://esm.sh/three@0.160.0';
+import { OrbitControls } from 'https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+import { GLTFLoader } from 'https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
+import { OBJLoader } from 'https://esm.sh/three@0.160.0/examples/jsm/loaders/OBJLoader.js';
+import { MTLLoader } from 'https://esm.sh/three@0.160.0/examples/jsm/loaders/MTLLoader.js';
+import { GLTFExporter } from 'https://esm.sh/three@0.160.0/examples/jsm/exporters/GLTFExporter.js';
+import JSZip from 'https://esm.sh/jszip@3.10.1';
+
+THREE.Object3D.DEFAULT_UP.set(0,0,1);
+
+const canvas = document.getElementById('three-canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(devicePixelRatio);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xf8fafc);
+scene.up.set(0,0,1);
+const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 10000);
+camera.position.set(400, 400, 300);
+camera.up.set(0,0,1);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.enablePan = true;
+controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, RIGHT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY };
+
+const hemi = new THREE.HemisphereLight(0xffffff, 0x667799, 0.9);
+scene.add(hemi);
+const dir = new THREE.DirectionalLight(0xffffff, 0.55);
+dir.position.set(200, 150, 300);
+scene.add(dir);
+const grid = new THREE.GridHelper(800, 40, 0x94a3b8, 0xcbd5e1);
+grid.rotation.x = Math.PI/2; // XY plane
+scene.add(grid);
+
+const modelGroup = new THREE.Group();
+scene.add(modelGroup);
+const measuresGroup = new THREE.Group();
+const notesGroup = new THREE.Group();
+modelGroup.add(measuresGroup);
+modelGroup.add(notesGroup);
+let currentScale = 1;
+
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+let currentMode = 'orbit';
+let pendingMeasure = [];
+let pendingNotePosition = null;
+let lastLoadedIsObj = false;
+let modelRoot = null;
+
+const state = {
+  metadata: {},
+  paradata: {},
+  measurements: [],
+  notes: []
+};
+
+function resize() {
+  const rect = canvas.getBoundingClientRect();
+  const w = rect.width || canvas.clientWidth;
+  const h = rect.height || canvas.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+resize();
+
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+function clearModel() {
+  modelGroup.clear();
+  modelGroup.add(measuresGroup);
+  modelGroup.add(notesGroup);
+  modelGroup.rotation.set(0,0,0);
+  modelGroup.position.set(0,0,0);
+  modelGroup.scale.setScalar(currentScale);
+  modelRoot = null;
+}
+
+function centerModel(obj) {
+  const box = new THREE.Box3().setFromObject(obj);
+  const centerXY = new THREE.Vector3((box.min.x + box.max.x)/2, (box.min.y + box.max.y)/2, box.min.z);
+  obj.position.sub(centerXY);
+}
+
+function applyScale(value) {
+  currentScale = value || 1;
+  modelGroup.scale.setScalar(currentScale);
+  rebuildOverlays();
+}
+
+document.getElementById('scale-input').addEventListener('change', (e)=>{
+  applyScale(parseFloat(e.target.value)||1);
+});
+
+function fitView() {
+  if (!modelRoot) return;
+  const box = new THREE.Box3().setFromObject(modelRoot);
+  const size = new THREE.Vector3(); box.getSize(size);
+  const center = new THREE.Vector3(); box.getCenter(center);
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const dist = maxDim * 1.4 / Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
+  const offset = new THREE.Vector3(dist, dist, dist * 0.6);
+  camera.position.copy(center.clone().add(offset));
+  controls.target.copy(center);
+  controls.update();
+}
+
+document.getElementById('fit-view').addEventListener('click', fitView);
+document.getElementById('reset-view').addEventListener('click', ()=>{
+  camera.position.set(400,400,300);
+  controls.target.set(0,0,0);
+});
+
+document.getElementById('toggle-wire').addEventListener('click', ()=>{
+  if (!modelRoot) return;
+  modelRoot.traverse(o=>{ if (o.isMesh && o.material) o.material.wireframe = !o.material.wireframe; });
+});
+
+function setMode(mode) {
+  currentMode = mode;
+  controls.enabled = mode === 'orbit';
+  document.querySelectorAll('#tools button[data-mode]').forEach(b=>b.classList.toggle('active', b.dataset.mode===mode));
+}
+
+document.querySelectorAll('#tools button[data-mode]').forEach(btn=>{
+  btn.addEventListener('click', ()=> setMode(btn.dataset.mode));
+});
+setMode('orbit');
+
+const rotButtons = document.querySelectorAll('#tools button[data-rot]');
+rotButtons.forEach(btn=>btn.addEventListener('click', ()=>{
+  if (!modelRoot) return;
+  const val = btn.dataset.rot;
+  const axis = val[0];
+  const dir = val.includes('-') ? -1 : 1;
+  const rot = (Math.PI/2) * dir;
+  const axisVec = axis==='x' ? new THREE.Vector3(1,0,0) : axis==='y' ? new THREE.Vector3(0,1,0) : new THREE.Vector3(0,0,1);
+  modelGroup.rotateOnAxis(axisVec, rot);
+  rebuildOverlays();
+  fitView();
+}));
+
+function rebuildOverlays() {
+  measuresGroup.clear();
+  notesGroup.clear();
+  state.measurements.forEach(m=>addMeasureVisual(m));
+  state.notes.forEach(n=>addNoteVisual(n));
+  updateMeasureList();
+  updateNotesList();
+}
+
+function loadObjFiles() {
+  const objFile = document.getElementById('obj-input').files[0];
+  if (!objFile) return alert('Seleziona un file OBJ');
+  const mtlFile = document.getElementById('mtl-input').files[0];
+  const textures = Array.from(document.getElementById('tex-input').files || []);
+  const texMap = new Map();
+  textures.forEach(f=> texMap.set(f.name, URL.createObjectURL(f)) );
+  const manager = new THREE.LoadingManager();
+  manager.setURLModifier((url)=>{
+    const file = url.split(/[/\\]/).pop();
+    if (texMap.has(file)) return texMap.get(file);
+    return url;
+  });
+  const loaderObj = new OBJLoader(manager);
+  const loadObjWithMaterial = (materialCreator)=>{
+    if (materialCreator) materialCreator.preload();
+    loaderObj.setMaterials(materialCreator||null);
+    const url = URL.createObjectURL(objFile);
+    loaderObj.load(url, obj=>{
+      clearModel();
+      obj.traverse(o=>{ if (o.isMesh) { o.material.side = THREE.DoubleSide; o.castShadow = o.receiveShadow = true; o.geometry.computeVertexNormals(); }});
+      centerModel(obj);
+      modelRoot = obj;
+      modelGroup.add(obj);
+      lastLoadedIsObj = true;
+      applyScale(parseFloat(document.getElementById('scale-input').value)||1);
+      fitView();
+    });
+  };
+  if (mtlFile) {
+    const mtlLoader = new MTLLoader(manager);
+    const url = URL.createObjectURL(mtlFile);
+    mtlLoader.load(url, materials=>{
+      loadObjWithMaterial(materials);
+    });
+  } else {
+    loadObjWithMaterial(null);
+  }
+}
+
+document.getElementById('load-obj').addEventListener('click', loadObjFiles);
+
+function parseAbanaFromGLTF(gltf) {
+  const json = gltf.parser?.json || {};
+  const sceneUD = gltf.scene?.userData || {};
+  const assetExtra = json.asset?.extras || {};
+  const gltfExtra = json.extras || {};
+  const pick = (obj)=> obj && (obj.abana || (obj.schema=== 'abana-3d-metadata-v1' ? obj : null));
+  return pick(sceneUD) || pick(gltfExtra) || pick(assetExtra) || (Object.keys(sceneUD||{}).length? sceneUD: null);
+}
+
+function loadGlbFile() {
+  const file = document.getElementById('glb-input').files[0];
+  if (!file) return alert('Seleziona un file GLB/GLTF');
+  const url = URL.createObjectURL(file);
+  const loader = new GLTFLoader();
+  loader.load(url, gltf=>{
+    clearModel();
+    modelRoot = gltf.scene || gltf.scenes[0];
+    centerModel(modelRoot);
+    modelGroup.add(modelRoot);
+    lastLoadedIsObj = false;
+    applyScale(parseFloat(document.getElementById('scale-input').value)||1);
+    fitView();
+    const meta = parseAbanaFromGLTF(gltf);
+    if (meta && meta.schema === 'abana-3d-metadata-v1') {
+      if (meta.metadata) { state.metadata = meta.metadata; populateMetadata(); }
+      if (meta.paradata) { state.paradata = meta.paradata; populateParadata(); }
+      state.measurements = meta.measurements||[];
+      state.notes = meta.notes||[];
+      persistAll();
+      rebuildOverlays();
+    }
+  });
+}
+
+document.getElementById('load-glb').addEventListener('click', loadGlbFile);
+
+function onPointerDown(event) {
+  if (currentMode === 'orbit') return;
+  const rect = canvas.getBoundingClientRect();
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = - ((event.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  if (!modelRoot) return;
+  const targets = [];
+  modelRoot.traverse(o=>{ if (o.isMesh) targets.push(o); });
+  const intersects = raycaster.intersectObjects(targets, true);
+  if (!intersects.length) return;
+  const point = intersects[0].point.clone();
+  if (currentMode === 'measure') {
+    pendingMeasure.push(point);
+    if (pendingMeasure.length ===2) {
+      const localA = modelGroup.worldToLocal(pendingMeasure[0].clone());
+      const localB = modelGroup.worldToLocal(pendingMeasure[1].clone());
+      const distance = localA.distanceTo(localB);
+      const entry = { a: localA.toArray(), b: localB.toArray(), distance };
+      state.measurements.push(entry);
+      pendingMeasure = [];
+      persistAll();
+      rebuildOverlays();
+    }
+  } else if (currentMode === 'note') {
+    pendingNotePosition = modelGroup.worldToLocal(point.clone()).toArray();
+    document.getElementById('note-pos').textContent = `Posizione: ${pendingNotePosition.map(v=>v.toFixed(2)).join(', ')} mm`;
+    document.getElementById('note-form').reset();
+    document.getElementById('note-add-para').checked = true;
+    document.getElementById('note-modal').showModal();
+  }
+}
+canvas.addEventListener('pointerdown', onPointerDown);
+
+function addMeasureVisual(m) {
+  const a = new THREE.Vector3().fromArray(m.a);
+  const b = new THREE.Vector3().fromArray(m.b);
+  const center = a.clone().add(b).multiplyScalar(0.5);
+  const dirVec = new THREE.Vector3().subVectors(b, a);
+  const len = dirVec.length();
+  if (!len) return;
+  const cylinderGeom = new THREE.CylinderGeometry(1.6,1.6,len,12);
+  const cylMat = new THREE.MeshStandardMaterial({ color: 0x2563eb });
+  const cyl = new THREE.Mesh(cylinderGeom, cylMat);
+  cyl.position.copy(center);
+  cyl.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dirVec.clone().normalize());
+  const sphereGeom = new THREE.SphereGeometry(3.2, 12, 12);
+  const sMat = new THREE.MeshStandardMaterial({ color: 0x10b981 });
+  const s1 = new THREE.Mesh(sphereGeom, sMat); s1.position.copy(a);
+  const s2 = new THREE.Mesh(sphereGeom, sMat); s2.position.copy(b);
+  const group = new THREE.Group();
+  group.add(cyl, s1, s2);
+  measuresGroup.add(group);
+}
+
+function clearMeasures() {
+  state.measurements=[];
+  persistAll();
+  rebuildOverlays();
+}
+
+function updateMeasureList() {
+  const ul = document.getElementById('measure-list');
+  ul.innerHTML='';
+  state.measurements.forEach((m,i)=>{
+    const pointA = m.a.map(v=>v*currentScale);
+    const pointB = m.b.map(v=>v*currentScale);
+    const scaledDist = new THREE.Vector3().fromArray(pointA).distanceTo(new THREE.Vector3().fromArray(pointB));
+    const li = document.createElement('li');
+    const span = document.createElement('span');
+    span.textContent = `#${i+1} - ${scaledDist.toFixed(2)} mm`;
+    li.appendChild(span);
+    const coord = document.createElement('span');
+    coord.className='small';
+    coord.textContent = `(${pointA.map(v=>v.toFixed(1)).join(', ')}) → (${pointB.map(v=>v.toFixed(1)).join(', ')})`;
+    li.appendChild(coord);
+    const btn = document.createElement('button'); btn.textContent='×'; btn.className='secondary';
+    btn.addEventListener('click', ()=>{ state.measurements.splice(i,1); persistAll(); rebuildOverlays(); });
+    li.appendChild(btn);
+    ul.appendChild(li);
+  });
+}
+
+document.getElementById('clear-measures').addEventListener('click', clearMeasures);
+document.getElementById('clear-measures-top').addEventListener('click', clearMeasures);
+
+function clearNotes() {
+  state.notes=[];
+  persistAll();
+  rebuildOverlays();
+}
+
+function addNoteVisual(n) {
+  const pos = new THREE.Vector3().fromArray(n.position);
+  const sphere = new THREE.Mesh(new THREE.SphereGeometry(4,14,14), new THREE.MeshStandardMaterial({ color: 0x22c55e }));
+  sphere.position.copy(pos);
+  notesGroup.add(sphere);
+}
+
+function updateNotesList() {
+  const ul = document.getElementById('notes-list');
+  ul.innerHTML='';
+  state.notes.forEach((n,i)=>{
+    const scaledPos = n.position.map(v=>v*currentScale);
+    const li = document.createElement('li');
+    const span = document.createElement('span');
+    span.textContent = `#${i+1} ${n.type} - ${n.text.slice(0,24)}${n.text.length>24?'…':''}`;
+    const pos = document.createElement('span'); pos.className='small'; pos.textContent = `(${scaledPos.map(v=>v.toFixed(1)).join(', ')})`;
+    const btnView = document.createElement('button'); btnView.textContent='Apri'; btnView.className='secondary';
+    btnView.addEventListener('click', ()=>{
+      document.getElementById('info-content').innerHTML = `<strong>Tipo:</strong> ${n.type}<br><strong>Pos:</strong> ${scaledPos.map(v=>v.toFixed(2)).join(', ')} mm<br><strong>Tag:</strong> ${n.tags}<br><p>${n.text}</p>`;
+      document.getElementById('info-modal').showModal();
+    });
+    const btn = document.createElement('button'); btn.textContent='×'; btn.className='secondary';
+    btn.addEventListener('click', ()=>{ state.notes.splice(i,1); persistAll(); rebuildOverlays(); });
+    li.append(span,pos,btnView,btn); ul.appendChild(li);
+  });
+}
+
+document.getElementById('clear-notes').addEventListener('click', clearNotes);
+document.getElementById('clear-notes-top').addEventListener('click', clearNotes);
+
+document.getElementById('note-modal').addEventListener('close',()=>{ pendingNotePosition=null; });
+
+document.getElementById('note-form').addEventListener('submit',(e)=>{
+  e.preventDefault();
+  if (!pendingNotePosition) return;
+  const type = document.getElementById('note-type').value;
+  const text = document.getElementById('note-text').value.trim();
+  const tags = document.getElementById('note-tags').value.trim();
+  const addPara = document.getElementById('note-add-para').checked;
+  const note = { position: pendingNotePosition, type, text, tags, timestamp: new Date().toISOString() };
+  state.notes.push(note);
+  if (addPara) {
+    const paragraph = `• [${note.type}] ${note.text} @ (${note.position.map(v=> (v*currentScale).toFixed(1)).join(', ')}) ${note.timestamp}`;
+    const existing = document.getElementById('para-decisions').value;
+    document.getElementById('para-decisions').value = existing ? `${existing}\n${paragraph}` : paragraph;
+    state.paradata.decisions = document.getElementById('para-decisions').value;
+  }
+  document.getElementById('note-modal').close();
+  persistAll();
+  rebuildOverlays();
+});
+
+function populateMetadata() {
+  const m = state.metadata;
+  document.getElementById('meta-title').value = m.title||'';
+  document.getElementById('meta-author').value = m.author||'';
+  document.getElementById('meta-date').value = m.date||'';
+  document.getElementById('meta-license').value = m.license||'';
+  document.getElementById('meta-desc').value = m.description||'';
+  document.getElementById('meta-place').value = m.place||'';
+  document.getElementById('meta-coord').value = m.coordinates||'';
+  document.getElementById('meta-keywords').value = m.keywords||'';
+  document.getElementById('meta-source').value = m.source||'';
+}
+
+function populateParadata() {
+  const p = state.paradata;
+  document.getElementById('para-method').value = p.method||'';
+  document.getElementById('para-tools').value = p.tools||'';
+  document.getElementById('para-params').value = p.params||'';
+  document.getElementById('para-operators').value = p.operators||'';
+  document.getElementById('para-decisions').value = p.decisions||'';
+}
+
+function readMetadataFromForm() {
+  state.metadata = {
+    title: document.getElementById('meta-title').value,
+    author: document.getElementById('meta-author').value,
+    date: document.getElementById('meta-date').value,
+    license: document.getElementById('meta-license').value,
+    description: document.getElementById('meta-desc').value,
+    place: document.getElementById('meta-place').value,
+    coordinates: document.getElementById('meta-coord').value,
+    keywords: document.getElementById('meta-keywords').value,
+    source: document.getElementById('meta-source').value,
+  };
+}
+
+function readParadataFromForm() {
+  state.paradata = {
+    method: document.getElementById('para-method').value,
+    tools: document.getElementById('para-tools').value,
+    params: document.getElementById('para-params').value,
+    operators: document.getElementById('para-operators').value,
+    decisions: document.getElementById('para-decisions').value,
+  };
+}
+
+document.getElementById('save-meta').addEventListener('click', ()=>{ readMetadataFromForm(); persistAll(); alert('Metadati salvati'); });
+document.getElementById('save-para').addEventListener('click', ()=>{ readParadataFromForm(); persistAll(); alert('Paradata salvati'); });
+
+document.getElementById('export-meta').addEventListener('click', ()=>{
+  readMetadataFromForm(); readParadataFromForm();
+  const payload = { schema:'abana-3d-metadata-v1', metadata: state.metadata, paradata: state.paradata, measurements: state.measurements, notes: state.notes };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'metadata.json';
+  a.click();
+});
+
+const importInput = document.getElementById('import-meta');
+importInput.addEventListener('change', ()=>{
+  const file = importInput.files[0];
+  if (!file) return;
+  file.text().then(txt=>{
+    try {
+      const data = JSON.parse(txt);
+      if (data.schema && data.schema !== 'abana-3d-metadata-v1') throw new Error('Schema non valido');
+      state.metadata = data.metadata||{}; populateMetadata();
+      state.paradata = data.paradata||{}; populateParadata();
+      state.measurements = data.measurements||[];
+      state.notes = data.notes||[];
+      persistAll(); rebuildOverlays();
+    } catch(err) { alert('Errore import: '+err.message); }
+  });
+});
+
+function persistAll() {
+  localStorage.setItem('abana-meta', JSON.stringify(state.metadata));
+  localStorage.setItem('abana-para', JSON.stringify(state.paradata));
+  localStorage.setItem('abana-measures', JSON.stringify(state.measurements));
+  localStorage.setItem('abana-notes', JSON.stringify(state.notes));
+  localStorage.setItem('abana-scale', currentScale);
+}
+
+function restoreAll() {
+  state.metadata = JSON.parse(localStorage.getItem('abana-meta')||'{}');
+  state.paradata = JSON.parse(localStorage.getItem('abana-para')||'{}');
+  state.measurements = JSON.parse(localStorage.getItem('abana-measures')||'[]');
+  state.notes = JSON.parse(localStorage.getItem('abana-notes')||'[]');
+  const savedScale = parseFloat(localStorage.getItem('abana-scale')||'1');
+  document.getElementById('scale-input').value = savedScale;
+  applyScale(savedScale);
+  populateMetadata();
+  populateParadata();
+  rebuildOverlays();
+}
+restoreAll();
+
+function createShareLink() {
+  readMetadataFromForm(); readParadataFromForm();
+  const payload = { metadata: state.metadata, paradata: state.paradata, measurements: state.measurements, notes: state.notes };
+  const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+  const url = `${location.origin}${location.pathname}#${encoded}`;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(()=>alert('Link copiato')).catch(()=>{
+      const dialog = document.getElementById('info-modal');
+      document.getElementById('info-content').innerHTML = `<p>Copia manualmente:</p><input style="width:100%;" value="${url}" readonly />`;
+      dialog.showModal();
+    });
+  } else {
+    const dialog = document.getElementById('info-modal');
+    document.getElementById('info-content').innerHTML = `<p>Copia manualmente:</p><input style="width:100%;" value="${url}" readonly />`;
+    dialog.showModal();
+  }
+}
+
+document.getElementById('share-link').addEventListener('click', createShareLink);
+
+function importFromHash() {
+  if (location.hash.length<2) return;
+  try {
+    const decoded = decodeURIComponent(escape(atob(location.hash.slice(1))));
+    const data = JSON.parse(decoded);
+    state.metadata = data.metadata||{}; populateMetadata();
+    state.paradata = data.paradata||{}; populateParadata();
+    state.measurements = data.measurements||[];
+    state.notes = data.notes||[];
+    persistAll(); rebuildOverlays();
+  } catch(err) { console.warn('Hash import fallita', err); }
+}
+importFromHash();
+
+async function exportGLBWithMetadata() {
+  if (!modelRoot) return alert('Carica un modello prima di esportare');
+  readMetadataFromForm(); readParadataFromForm();
+  modelRoot.userData.abana = { schema:'abana-3d-metadata-v1', metadata: state.metadata, paradata: state.paradata, measurements: state.measurements, notes: state.notes };
+  const exporter = new GLTFExporter();
+  exporter.parse(modelRoot, (result)=>{
+    const blob = new Blob([result], {type:'model/gltf-binary'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'abana-export.glb';
+    a.click();
+  }, { binary: true, embedImages: true });
+}
+
+document.getElementById('export-glb').addEventListener('click', exportGLBWithMetadata);
+
+async function exportZipObj() {
+  if (!modelRoot || !lastLoadedIsObj) return alert('Disponibile solo per OBJ caricati');
+  readMetadataFromForm(); readParadataFromForm();
+  const zip = new JSZip();
+  const objFile = document.getElementById('obj-input').files[0];
+  const mtlFile = document.getElementById('mtl-input').files[0];
+  const texFiles = Array.from(document.getElementById('tex-input').files||[]);
+  if (objFile) zip.file(objFile.name, objFile);
+  if (mtlFile) zip.file(mtlFile.name, mtlFile);
+  const texFolder = zip.folder('textures');
+  texFiles.forEach(f=> texFolder.file(f.name, f));
+  const payload = { schema:'abana-3d-metadata-v1', metadata: state.metadata, paradata: state.paradata, measurements: state.measurements, notes: state.notes };
+  zip.file('metadata.json', JSON.stringify(payload, null, 2));
+  const blob = await zip.generateAsync({type:'blob'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'abana-package.zip';
+  a.click();
+}
+
+document.getElementById('export-zip').addEventListener('click', exportZipObj);
+
+const keyMap = {
+  'o': 'orbit',
+  'm': 'measure',
+  'n': 'note'
+};
+
+window.addEventListener('keydown', (e)=>{
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.key === 'Escape') { setMode('orbit'); return; }
+  if (e.ctrlKey) {
+    const k = e.key.toLowerCase();
+    if (keyMap[k]) {
+      setMode(keyMap[k]);
+    }
+    if (k==='f') fitView();
+    if (k==='r') { camera.position.set(400,400,300); controls.target.set(0,0,0); }
+    if (k==='w') document.getElementById('toggle-wire').click();
+  }
+});
+</script>
+</body>
+</html>
